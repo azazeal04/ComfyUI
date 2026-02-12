@@ -342,6 +342,60 @@ def hijack_progress(server_instance):
         get_progress_state().update_progress(node_id, value, total, preview_image)
 
         server_instance.send_sync("progress", progress, server_instance.client_id)
+
+        plan = None
+        if hasattr(server_instance, "nova_prompt_plans") and prompt_id is not None:
+            plan = server_instance.nova_prompt_plans.get(prompt_id)
+
+        if feature_flags.supports_feature(
+            server_instance.sockets_metadata,
+            server_instance.client_id,
+            "supports_nova_partial_output",
+        ):
+            payload = {"prompt_id": prompt_id, "node": node_id, "value": value, "max": total}
+            if plan is not None:
+                image_plan = plan.get("image", {})
+                tile_count = int(image_plan.get("tile_count", 0) or 0)
+                if tile_count > 0 and total > 0:
+                    tile_index = min(tile_count - 1, int((value / total) * tile_count))
+                    payload["tile_index"] = tile_index
+                    payload["tile_count"] = tile_count
+
+                video_plan = plan.get("video", {})
+                if video_plan.get("enabled"):
+                    window_count = int(video_plan.get("window_count", 0) or 0)
+                    payload["video_window_count"] = window_count
+                    if feature_flags.supports_feature(
+                        server_instance.sockets_metadata,
+                        server_instance.client_id,
+                        "supports_nova_partial_video",
+                    ) and window_count > 0 and total > 0:
+                        window_index = min(window_count - 1, int((value / total) * window_count))
+                        server_instance.send_sync(
+                            "output.partial.video",
+                            {"prompt_id": prompt_id, "node": node_id, "window_index": window_index, "window_count": window_count},
+                            server_instance.client_id,
+                        )
+
+                audio_plan = plan.get("audio", {})
+                if audio_plan.get("enabled"):
+                    segment_count = int(audio_plan.get("segment_count", 0) or 0)
+                    payload["audio_segment_count"] = segment_count
+                    if feature_flags.supports_feature(
+                        server_instance.sockets_metadata,
+                        server_instance.client_id,
+                        "supports_nova_partial_audio",
+                    ) and segment_count > 0 and total > 0:
+                        segment_index = min(segment_count - 1, int((value / total) * segment_count))
+                        server_instance.send_sync(
+                            "output.partial.audio",
+                            {"prompt_id": prompt_id, "node": node_id, "segment_index": segment_index, "segment_count": segment_count},
+                            server_instance.client_id,
+                        )
+
+            if preview_image is not None:
+                server_instance.send_sync("output.partial.image", payload, server_instance.client_id)
+
         if preview_image is not None:
             if feature_flags.supports_feature(
                 server_instance.sockets_metadata,

@@ -702,6 +702,20 @@ class PromptServer():
                 info['api_node'] = obj_class.API_NODE
 
             info['search_aliases'] = getattr(obj_class, 'SEARCH_ALIASES', [])
+
+            descriptor = None
+            if hasattr(obj_class, "EXECUTION_DESCRIPTOR"):
+                try:
+                    descriptor = obj_class.EXECUTION_DESCRIPTOR()
+                except Exception:
+                    descriptor = None
+            if descriptor is None:
+                descriptor = NodeV1Adapter.get_execution_descriptor(obj_class)
+            info['execution_descriptor'] = {
+                "supports_streaming": descriptor.supports_streaming,
+                "supports_tiling": descriptor.supports_tiling,
+                "quantization_support": descriptor.quantization_support,
+            }
             return info
 
         @routes.get("/object_info")
