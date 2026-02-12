@@ -177,6 +177,7 @@ if 'torch' in sys.modules:
 import comfy.utils
 
 import execution
+from comfy_execution.telemetry import ExecutionTelemetry
 import server
 from protocol import BinaryEventTypes
 import nodes
@@ -238,6 +239,7 @@ def prompt_worker(q, server_instance):
         cache_type = execution.CacheType.NONE
 
     e = execution.PromptExecutor(server_instance, cache_type=cache_type, cache_args={ "lru" : args.cache_lru, "ram" : args.cache_ram } )
+    telemetry = ExecutionTelemetry(server_instance)
     last_gc_collect = 0
     need_gc = False
     gc_collect_interval = 10.0
@@ -253,13 +255,19 @@ def prompt_worker(q, server_instance):
             execution_start_time = time.perf_counter()
             prompt_id = item[1]
             server_instance.last_prompt_id = prompt_id
+            telemetry.emit("telemetry.queue_dequeue", {"prompt_id": prompt_id})
 
             sensitive = item[5]
             extra_data = item[3].copy()
             for k in sensitive:
                 extra_data[k] = sensitive[k]
 
-            e.execute(item[2], prompt_id, extra_data, item[4])
+            with telemetry.track_duration(
+                "telemetry.prompt_compute_start",
+                "telemetry.prompt_compute_end",
+                {"prompt_id": prompt_id},
+            ):
+                e.execute(item[2], prompt_id, extra_data, item[4])
             need_gc = True
 
             remove_sensitive = lambda prompt: prompt[:5] + prompt[6:]
