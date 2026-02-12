@@ -243,6 +243,7 @@ class PromptServer():
         self.routes = routes
         self.last_node_id = None
         self.client_id = None
+        self.nova_prompt_plans = {}
 
         self.on_prompt_handlers = []
 
