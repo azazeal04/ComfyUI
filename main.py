@@ -177,6 +177,8 @@ if 'torch' in sys.modules:
 import comfy.utils
 
 import execution
+from comfy_execution.telemetry import ExecutionTelemetry
+from comfy_execution.nova_scheduler import NovaPromptExecutor
 import server
 from protocol import BinaryEventTypes
 import nodes
@@ -237,7 +239,9 @@ def prompt_worker(q, server_instance):
     elif args.cache_none:
         cache_type = execution.CacheType.NONE
 
-    e = execution.PromptExecutor(server_instance, cache_type=cache_type, cache_args={ "lru" : args.cache_lru, "ram" : args.cache_ram } )
+    executor_cls = NovaPromptExecutor if args.executor == "nova" else execution.PromptExecutor
+    e = executor_cls(server_instance, cache_type=cache_type, cache_args={ "lru" : args.cache_lru, "ram" : args.cache_ram } )
+    telemetry = ExecutionTelemetry(server_instance)
     last_gc_collect = 0
     need_gc = False
     gc_collect_interval = 10.0
@@ -253,13 +257,19 @@ def prompt_worker(q, server_instance):
             execution_start_time = time.perf_counter()
             prompt_id = item[1]
             server_instance.last_prompt_id = prompt_id
+            telemetry.emit("telemetry.queue_dequeue", {"prompt_id": prompt_id})
 
             sensitive = item[5]
             extra_data = item[3].copy()
             for k in sensitive:
                 extra_data[k] = sensitive[k]
 
-            e.execute(item[2], prompt_id, extra_data, item[4])
+            with telemetry.track_duration(
+                "telemetry.prompt_compute_start",
+                "telemetry.prompt_compute_end",
+                {"prompt_id": prompt_id},
+            ):
+                e.execute(item[2], prompt_id, extra_data, item[4])
             need_gc = True
 
             remove_sensitive = lambda prompt: prompt[:5] + prompt[6:]
@@ -271,6 +281,8 @@ def prompt_worker(q, server_instance):
                             messages=e.status_messages), process_item=remove_sensitive)
             if server_instance.client_id is not None:
                 server_instance.send_sync("executing", {"node": None, "prompt_id": prompt_id}, server_instance.client_id)
+            if hasattr(server_instance, "nova_prompt_plans"):
+                server_instance.nova_prompt_plans.pop(prompt_id, None)
 
             current_time = time.perf_counter()
             execution_time = current_time - execution_start_time
@@ -330,6 +342,27 @@ def hijack_progress(server_instance):
 
         server_instance.send_sync("progress", progress, server_instance.client_id)
         if preview_image is not None:
+            if feature_flags.supports_feature(
+                server_instance.sockets_metadata,
+                server_instance.client_id,
+                "supports_nova_partial_output",
+            ):
+                payload = {"prompt_id": prompt_id, "node": node_id, "value": value, "max": total}
+                plan = None
+                if hasattr(server_instance, "nova_prompt_plans") and prompt_id is not None:
+                    plan = server_instance.nova_prompt_plans.get(prompt_id)
+                if plan is not None:
+                    image_plan = plan.get("image", {})
+                    tile_count = int(image_plan.get("tile_count", 0) or 0)
+                    if tile_count > 0 and total > 0:
+                        tile_index = min(tile_count - 1, int((value / total) * tile_count))
+                        payload["tile_index"] = tile_index
+                        payload["tile_count"] = tile_count
+                    if plan.get("video", {}).get("enabled"):
+                        payload["video_window_count"] = plan.get("video", {}).get("window_count", 0)
+                    if plan.get("audio", {}).get("enabled"):
+                        payload["audio_segment_count"] = plan.get("audio", {}).get("segment_count", 0)
+                server_instance.send_sync("output.partial.image", payload, server_instance.client_id)
             # Only send old method if client doesn't support preview metadata
             if not feature_flags.supports_feature(
                 server_instance.sockets_metadata,

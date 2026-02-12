@@ -43,6 +43,7 @@ from app.subgraph_manager import SubgraphManager
 from typing import Optional, Union
 from api_server.routes.internal.internal_routes import InternalRoutes
 from protocol import BinaryEventTypes
+from comfy_execution.profile_policy import detect_profile, auto_optimize_hint
 
 # Import cache control middleware
 from middleware.cache_middleware import cache_control
@@ -242,6 +243,7 @@ class PromptServer():
         self.routes = routes
         self.last_node_id = None
         self.client_id = None
+        self.nova_prompt_plans = {}
 
         self.on_prompt_handlers = []
 
@@ -644,6 +646,32 @@ class PromptServer():
         @routes.get("/features")
         async def get_features(request):
             return web.json_response(feature_flags.get_server_features())
+
+        @routes.get("/nova/profile")
+        async def get_nova_profile(request):
+            profile = detect_profile()
+            return web.json_response({"profile": profile.value})
+
+        @routes.post("/nova/auto_optimize")
+        async def post_nova_auto_optimize(request):
+            try:
+                json_data = await request.json()
+            except Exception:
+                json_data = {}
+            return web.json_response(auto_optimize_hint(json_data))
+
+        @routes.get("/nova/panel_config")
+        async def get_nova_panel_config(request):
+            return web.json_response({
+                "enabled": True,
+                "requires_features": [
+                    "supports_nova_telemetry",
+                    "supports_nova_partial_output",
+                    "supports_nova_auto_optimize_hints",
+                ],
+                "auto_optimize_endpoint": "/api/nova/auto_optimize",
+                "profile_endpoint": "/api/nova/profile",
+            })
 
         @routes.get("/prompt")
         async def get_prompt(request):
