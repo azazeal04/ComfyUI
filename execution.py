@@ -39,6 +39,7 @@ from comfy_execution.graph_utils import GraphBuilder, is_link
 from comfy_execution.validation import validate_node_input
 from comfy_execution.progress import get_progress_state, reset_progress_state, add_progress_handler, WebUIProgressHandler
 from comfy_execution.utils import CurrentNodeContext
+from comfy_execution.telemetry import ExecutionTelemetry
 from comfy_api.internal import _ComfyNodeInternal, _NodeOutputInternal, first_real_override, is_class, make_locked_method_func
 from comfy_api.latest import io, _io
 
@@ -705,8 +706,13 @@ class PromptExecutor:
 
         self.status_messages = []
         self.add_message("execution_start", { "prompt_id": prompt_id}, broadcast=False)
+        telemetry = ExecutionTelemetry(self.server)
 
-        with torch.inference_mode():
+        with telemetry.track_duration(
+            "telemetry.execution_start",
+            "telemetry.execution_end",
+            {"prompt_id": prompt_id},
+        ), torch.inference_mode():
             dynamic_prompt = DynamicPrompt(prompt)
             reset_progress_state(prompt_id, dynamic_prompt)
             add_progress_handler(WebUIProgressHandler(self.server))
@@ -740,7 +746,15 @@ class PromptExecutor:
                     break
 
                 assert node_id is not None, "Node ID should not be None at this point"
+                telemetry.emit("telemetry.node_start", {"prompt_id": prompt_id, "node_id": node_id})
+                node_start = time.perf_counter()
                 result, error, ex = await execute(self.server, dynamic_prompt, self.caches, node_id, extra_data, executed, prompt_id, execution_list, pending_subgraph_results, pending_async_nodes, ui_node_outputs)
+                telemetry.emit("telemetry.node_end", {
+                    "prompt_id": prompt_id,
+                    "node_id": node_id,
+                    "duration_ms": round((time.perf_counter() - node_start) * 1000.0, 3),
+                    "result": result.name,
+                })
                 self.success = result != ExecutionResult.FAILURE
                 if result == ExecutionResult.FAILURE:
                     self.handle_execution_error(prompt_id, dynamic_prompt.original_prompt, current_outputs, executed, error, ex)
