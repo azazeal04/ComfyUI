@@ -241,6 +241,7 @@ def prompt_worker(q, server_instance):
 
     executor_cls = NovaPromptExecutor if args.executor == "nova" else execution.PromptExecutor
     e = executor_cls(server_instance, cache_type=cache_type, cache_args={ "lru" : args.cache_lru, "ram" : args.cache_ram } )
+    e = execution.PromptExecutor(server_instance, cache_type=cache_type, cache_args={ "lru" : args.cache_lru, "ram" : args.cache_ram } )
     telemetry = ExecutionTelemetry(server_instance)
     last_gc_collect = 0
     need_gc = False
@@ -347,22 +348,11 @@ def hijack_progress(server_instance):
                 server_instance.client_id,
                 "supports_nova_partial_output",
             ):
-                payload = {"prompt_id": prompt_id, "node": node_id, "value": value, "max": total}
-                plan = None
-                if hasattr(server_instance, "nova_prompt_plans") and prompt_id is not None:
-                    plan = server_instance.nova_prompt_plans.get(prompt_id)
-                if plan is not None:
-                    image_plan = plan.get("image", {})
-                    tile_count = int(image_plan.get("tile_count", 0) or 0)
-                    if tile_count > 0 and total > 0:
-                        tile_index = min(tile_count - 1, int((value / total) * tile_count))
-                        payload["tile_index"] = tile_index
-                        payload["tile_count"] = tile_count
-                    if plan.get("video", {}).get("enabled"):
-                        payload["video_window_count"] = plan.get("video", {}).get("window_count", 0)
-                    if plan.get("audio", {}).get("enabled"):
-                        payload["audio_segment_count"] = plan.get("audio", {}).get("segment_count", 0)
-                server_instance.send_sync("output.partial.image", payload, server_instance.client_id)
+                server_instance.send_sync(
+                    "output.partial.image",
+                    {"prompt_id": prompt_id, "node": node_id, "value": value, "max": total},
+                    server_instance.client_id,
+                )
             # Only send old method if client doesn't support preview metadata
             if not feature_flags.supports_feature(
                 server_instance.sockets_metadata,

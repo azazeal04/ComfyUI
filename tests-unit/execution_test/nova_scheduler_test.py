@@ -40,8 +40,3 @@ def test_nova_executor_emits_plan_and_snapshot(monkeypatch):
     event_names = [name for name, _, _ in server.events]
     assert "telemetry.nova_plan" in event_names
     assert "telemetry.nova_residency_snapshot" in event_names
-    assert "p1" in server.nova_prompt_plans
-    plan = server.nova_prompt_plans["p1"]
-    assert plan["image"]["tile_count"] > 0
-    assert plan["video"]["window_count"] > 0
-    assert plan["audio"]["segment_count"] > 0

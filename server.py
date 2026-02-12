@@ -660,19 +660,6 @@ class PromptServer():
                 json_data = {}
             return web.json_response(auto_optimize_hint(json_data))
 
-        @routes.get("/nova/panel_config")
-        async def get_nova_panel_config(request):
-            return web.json_response({
-                "enabled": True,
-                "requires_features": [
-                    "supports_nova_telemetry",
-                    "supports_nova_partial_output",
-                    "supports_nova_auto_optimize_hints",
-                ],
-                "auto_optimize_endpoint": "/api/nova/auto_optimize",
-                "profile_endpoint": "/api/nova/profile",
-            })
-
         @routes.get("/prompt")
         async def get_prompt(request):
             return web.json_response(self.get_queue_info())
