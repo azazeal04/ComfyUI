@@ -43,7 +43,6 @@ from app.subgraph_manager import SubgraphManager
 from typing import Optional, Union
 from api_server.routes.internal.internal_routes import InternalRoutes
 from protocol import BinaryEventTypes
-from comfy_execution.node_abi_v2 import NodeV1Adapter
 from comfy_execution.profile_policy import detect_profile, auto_optimize_hint
 
 # Import cache control middleware
@@ -660,21 +659,6 @@ class PromptServer():
             except Exception:
                 json_data = {}
             return web.json_response(auto_optimize_hint(json_data))
-
-        @routes.get("/nova/panel_config")
-        async def get_nova_panel_config(request):
-            return web.json_response({
-                "enabled": True,
-                "requires_features": [
-                    "supports_nova_telemetry",
-                    "supports_nova_partial_output",
-                    "supports_nova_partial_video",
-                    "supports_nova_partial_audio",
-                    "supports_nova_auto_optimize_hints",
-                ],
-                "auto_optimize_endpoint": "/api/nova/auto_optimize",
-                "profile_endpoint": "/api/nova/profile",
-            })
 
         @routes.get("/prompt")
         async def get_prompt(request):
