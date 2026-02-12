@@ -177,6 +177,8 @@ if 'torch' in sys.modules:
 import comfy.utils
 
 import execution
+from comfy_execution.telemetry import ExecutionTelemetry
+from comfy_execution.nova_scheduler import NovaPromptExecutor
 import server
 from protocol import BinaryEventTypes
 import nodes
@@ -237,7 +239,9 @@ def prompt_worker(q, server_instance):
     elif args.cache_none:
         cache_type = execution.CacheType.NONE
 
-    e = execution.PromptExecutor(server_instance, cache_type=cache_type, cache_args={ "lru" : args.cache_lru, "ram" : args.cache_ram } )
+    executor_cls = NovaPromptExecutor if args.executor == "nova" else execution.PromptExecutor
+    e = executor_cls(server_instance, cache_type=cache_type, cache_args={ "lru" : args.cache_lru, "ram" : args.cache_ram } )
+    telemetry = ExecutionTelemetry(server_instance)
     last_gc_collect = 0
     need_gc = False
     gc_collect_interval = 10.0
@@ -253,13 +257,19 @@ def prompt_worker(q, server_instance):
             execution_start_time = time.perf_counter()
             prompt_id = item[1]
             server_instance.last_prompt_id = prompt_id
+            telemetry.emit("telemetry.queue_dequeue", {"prompt_id": prompt_id})
 
             sensitive = item[5]
             extra_data = item[3].copy()
             for k in sensitive:
                 extra_data[k] = sensitive[k]
 
-            e.execute(item[2], prompt_id, extra_data, item[4])
+            with telemetry.track_duration(
+                "telemetry.prompt_compute_start",
+                "telemetry.prompt_compute_end",
+                {"prompt_id": prompt_id},
+            ):
+                e.execute(item[2], prompt_id, extra_data, item[4])
             need_gc = True
 
             remove_sensitive = lambda prompt: prompt[:5] + prompt[6:]
@@ -330,6 +340,16 @@ def hijack_progress(server_instance):
 
         server_instance.send_sync("progress", progress, server_instance.client_id)
         if preview_image is not None:
+            if feature_flags.supports_feature(
+                server_instance.sockets_metadata,
+                server_instance.client_id,
+                "supports_nova_partial_output",
+            ):
+                server_instance.send_sync(
+                    "output.partial.image",
+                    {"prompt_id": prompt_id, "node": node_id, "value": value, "max": total},
+                    server_instance.client_id,
+                )
             # Only send old method if client doesn't support preview metadata
             if not feature_flags.supports_feature(
                 server_instance.sockets_metadata,

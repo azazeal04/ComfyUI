@@ -43,6 +43,7 @@ from app.subgraph_manager import SubgraphManager
 from typing import Optional, Union
 from api_server.routes.internal.internal_routes import InternalRoutes
 from protocol import BinaryEventTypes
+from comfy_execution.profile_policy import detect_profile, auto_optimize_hint
 
 # Import cache control middleware
 from middleware.cache_middleware import cache_control
@@ -644,6 +645,19 @@ class PromptServer():
         @routes.get("/features")
         async def get_features(request):
             return web.json_response(feature_flags.get_server_features())
+
+        @routes.get("/nova/profile")
+        async def get_nova_profile(request):
+            profile = detect_profile()
+            return web.json_response({"profile": profile.value})
+
+        @routes.post("/nova/auto_optimize")
+        async def post_nova_auto_optimize(request):
+            try:
+                json_data = await request.json()
+            except Exception:
+                json_data = {}
+            return web.json_response(auto_optimize_hint(json_data))
 
         @routes.get("/prompt")
         async def get_prompt(request):
