@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import copy
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
+
 
 
 class NovaExecutionProfile(str, Enum):
@@ -78,22 +78,6 @@ def get_profile_hints(profile: NovaExecutionProfile | None = None) -> ProfileHin
     return hints_by_profile[profile]
 
 
-def _compute_recommendation(width: int, height: int, steps: int, hints: ProfileHints) -> dict[str, int | str]:
-    megapixels = (width * height) / 1_000_000.0
-    recommended_tile = hints.tile_size
-    if megapixels > 2.5:
-        recommended_tile = max(384, hints.tile_size // 2)
-
-    max_steps = min(steps, 28 if "pascal" in hints.profile.value else 40)
-    return {
-        "tile_size": recommended_tile,
-        "micro_batch": hints.micro_batch,
-        "quantization": hints.quantization,
-        "memory_headroom_mb": hints.memory_headroom_mb,
-        "max_steps": max_steps,
-    }
-
-
 def auto_optimize_hint(payload: dict[str, Any]) -> dict[str, Any]:
     """Return frontend-consumable optimization hints without changing runtime behavior."""
     profile_value = payload.get("profile")
@@ -106,54 +90,20 @@ def auto_optimize_hint(payload: dict[str, Any]) -> dict[str, Any]:
     hints = get_profile_hints(profile)
     width = int(payload.get("width", 1024))
     height = int(payload.get("height", 1024))
+    megapixels = (width * height) / 1_000_000.0
     steps = int(payload.get("steps", 20))
+
+    recommended_tile = hints.tile_size
+    if megapixels > 2.5:
+        recommended_tile = max(384, hints.tile_size // 2)
 
     return {
         "profile": hints.profile.value,
-        "recommended": _compute_recommendation(width, height, steps, hints),
-    }
-
-
-def optimize_prompt_graph(prompt: dict[str, Any], hints: ProfileHints) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Create an optimized prompt copy based on profile hints and return changes summary."""
-    optimized = copy.deepcopy(prompt)
-    changed_nodes: dict[str, dict[str, Any]] = {}
-
-    for node_id, node in optimized.items():
-        inputs = node.get("inputs")
-        if not isinstance(inputs, dict):
-            continue
-        before: dict[str, Any] = {}
-        after: dict[str, Any] = {}
-
-        width = inputs.get("width")
-        height = inputs.get("height")
-        steps = inputs.get("steps")
-
-        if isinstance(width, int) and width > hints.tile_size * 2:
-            before["width"] = width
-            inputs["width"] = hints.tile_size * 2
-            after["width"] = inputs["width"]
-
-        if isinstance(height, int) and height > hints.tile_size * 2:
-            before["height"] = height
-            inputs["height"] = hints.tile_size * 2
-            after["height"] = inputs["height"]
-
-        if isinstance(steps, int):
-            max_steps = 28 if "pascal" in hints.profile.value else 40
-            if steps > max_steps:
-                before["steps"] = steps
-                inputs["steps"] = max_steps
-                after["steps"] = inputs["steps"]
-
-        if before:
-            changed_nodes[node_id] = {
-                "before": before,
-                "after": after,
-            }
-
-    return optimized, {
-        "changed_nodes": changed_nodes,
-        "changed_node_count": len(changed_nodes),
+        "recommended": {
+            "tile_size": recommended_tile,
+            "micro_batch": hints.micro_batch,
+            "quantization": hints.quantization,
+            "memory_headroom_mb": hints.memory_headroom_mb,
+            "max_steps": min(steps, 28 if "pascal" in hints.profile.value else 40),
+        },
     }

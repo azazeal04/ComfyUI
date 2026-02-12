@@ -16,8 +16,6 @@ SERVER_FEATURE_FLAGS: dict[str, Any] = {
     "extension": {"manager": {"supports_v4": True}},
     "supports_nova_telemetry": True,
     "supports_nova_partial_output": True,
-    "supports_nova_partial_video": True,
-    "supports_nova_partial_audio": True,
     "supports_nova_auto_optimize_hints": True,
 }
 

@@ -43,8 +43,7 @@ from app.subgraph_manager import SubgraphManager
 from typing import Optional, Union
 from api_server.routes.internal.internal_routes import InternalRoutes
 from protocol import BinaryEventTypes
-from comfy_execution.node_abi_v2 import NodeV1Adapter
-from comfy_execution.profile_policy import detect_profile, auto_optimize_hint, get_profile_hints, optimize_prompt_graph
+from comfy_execution.profile_policy import detect_profile, auto_optimize_hint
 
 # Import cache control middleware
 from middleware.cache_middleware import cache_control
@@ -660,58 +659,6 @@ class PromptServer():
             except Exception:
                 json_data = {}
             return web.json_response(auto_optimize_hint(json_data))
-
-        @routes.get("/nova/panel_config")
-        async def get_nova_panel_config(request):
-            return web.json_response({
-                "enabled": True,
-                "requires_features": [
-                    "supports_nova_telemetry",
-                    "supports_nova_partial_output",
-                    "supports_nova_partial_video",
-                    "supports_nova_partial_audio",
-                    "supports_nova_auto_optimize_hints",
-                ],
-                "auto_optimize_endpoint": "/api/nova/auto_optimize",
-                "profile_endpoint": "/api/nova/profile",
-            })
-
-        @routes.post("/nova/optimize_prompt")
-        async def post_nova_optimize_prompt(request):
-            try:
-                json_data = await request.json()
-            except Exception:
-                json_data = {}
-
-            prompt = json_data.get("prompt", {})
-            if not isinstance(prompt, dict):
-                return web.json_response({"error": "prompt must be an object"}, status=400)
-
-            profile_value = json_data.get("profile")
-            profile = detect_profile()
-            if isinstance(profile_value, str):
-                try:
-                    from comfy_execution.profile_policy import NovaExecutionProfile
-
-                    profile = NovaExecutionProfile(profile_value)
-                except ValueError:
-                    pass
-
-            hints = get_profile_hints(profile)
-            optimized_prompt, summary = optimize_prompt_graph(prompt, hints)
-            return web.json_response({
-                "profile": hints.profile.value,
-                "optimized_prompt": optimized_prompt,
-                "summary": summary,
-            })
-
-        @routes.get("/nova/plan/{prompt_id}")
-        async def get_nova_plan(request):
-            prompt_id = request.match_info.get("prompt_id", "")
-            plan = self.nova_prompt_plans.get(prompt_id)
-            if plan is None:
-                return web.json_response({"error": "prompt plan not found"}, status=404)
-            return web.json_response(plan)
 
         @routes.get("/prompt")
         async def get_prompt(request):
