@@ -15,6 +15,8 @@ SERVER_FEATURE_FLAGS: dict[str, Any] = {
     "max_upload_size": args.max_upload_size * 1024 * 1024, # Convert MB to bytes
     "extension": {"manager": {"supports_v4": True}},
     "supports_nova_telemetry": True,
+    "supports_nova_partial_output": True,
+    "supports_nova_auto_optimize_hints": True,
 }
 
 
