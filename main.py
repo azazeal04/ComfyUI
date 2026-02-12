@@ -241,6 +241,7 @@ def prompt_worker(q, server_instance):
 
     executor_cls = NovaPromptExecutor if args.executor == "nova" else execution.PromptExecutor
     e = executor_cls(server_instance, cache_type=cache_type, cache_args={ "lru" : args.cache_lru, "ram" : args.cache_ram } )
+    e = execution.PromptExecutor(server_instance, cache_type=cache_type, cache_args={ "lru" : args.cache_lru, "ram" : args.cache_ram } )
     telemetry = ExecutionTelemetry(server_instance)
     last_gc_collect = 0
     need_gc = False
